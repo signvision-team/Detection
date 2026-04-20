@@ -1,0 +1,16 @@
+asl_alphabet_train
+ convert-to-csv.py
+  detect.py gui.py 
+  landmark.csv
+   landmarks.csv
+    model.pk1 
+    model.pkl 
+     recommend.txt
+      train.py
+
+
+      First Run the convert-to-csv.py  file 
+      you will get a landmarks.csv file.
+      Then run train.py file that file uses the saved landmarks.
+      When it completes you will get a trained model.
+      Then run detect.py file . It uses the trained model and web cam to detect hte sign.

@@ -1,0 +1,6 @@
+node_modules/
+asl_alphabet_train/
+.env
+dist/
+build/
+*.log
