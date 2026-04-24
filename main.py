@@ -28,12 +28,25 @@ def home():
 @app.post("/predict")
 def predict(data: dict):
     try:
-        # decode image
-        image_data = data["image"].split(",")[1]
+        # ✅ safe check
+        if "image" not in data:
+            return {"error": "image missing"}
+
+        image_str = data["image"]
+
+        # handle both formats safely
+        if "," in image_str:
+            image_data = image_str.split(",")[1]
+        else:
+            image_data = image_str
+
         image_bytes = base64.b64decode(image_data)
 
         np_arr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+        if img is None:
+            return {"error": "invalid image"}
 
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         result = hands.process(rgb)
