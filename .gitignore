@@ -4,3 +4,8 @@ asl_alphabet_train/
 dist/
 build/
 *.log
+model.pkl
+landmarks.csv
+__pycache__/
+*.pyc
+venv/
