@@ -1,11 +1,8 @@
 node_modules/
 asl_alphabet_train/
 .env
-dist/
-build/
-*.log
 model.pkl
 landmarks.csv
 __pycache__/
+.vscode/
 *.pyc
-venv/
