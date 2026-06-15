@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from collections import deque, Counter
-from typing import List, Optional
+from typing import List, Optional, Union
 import numpy as np
 import joblib
 import time
@@ -16,9 +16,14 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# Crucial: Ensure your local React server port matches origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[    "http://localhost:5173", "https://signvision-5mwgcpa5b-wahabullahs-projects.vercel.app/"],
+    allow_origins=[
+        "http://localhost:5173", 
+        "http://127.0.0.1:5173",
+        "https://signvision-5mwgcpa5b-wahabullahs-projects.vercel.app/"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,10 +56,14 @@ last_stable_sign   : Optional[str] = None
 last_sign_time     : float = 0.0
 
 # ─────────────────────────────────────────────
-# REQUEST SCHEMA
+# REQUEST SCHEMAS
 # ─────────────────────────────────────────────
 class PredictRequest(BaseModel):
     features: List[float]          # 63 normalised x,y,z landmarks
+
+class LifecycleRequest(BaseModel):
+    user_id: Union[str, int]       # ◄── This accepts BOTH "2" and 2 safely!
+    lesson_id: Optional[Union[str, int]] = None  # ◄── Protects lesson_id data types too
 
 # ─────────────────────────────────────────────
 # HELPER — majority vote over recent frames
@@ -63,13 +72,12 @@ def majority_vote(buf: deque) -> Optional[str]:
     if not buf:
         return None
     most_common, count = Counter(buf).most_common(1)[0]
-    # require at least 60 % of the window to agree
     if count / len(buf) >= 0.6:
         return most_common
     return None
 
 # ─────────────────────────────────────────────
-# ROUTES
+# STANDARD ROUTES
 # ─────────────────────────────────────────────
 
 @app.get("/")
@@ -77,7 +85,7 @@ def home():
     return {
         "message"  : "SignVision API v2.0 🚀",
         "status"   : "running",
-        "endpoints": ["/predict", "/sentence", "/sentence/clear", "/health"]
+        "endpoints": ["/predict", "/sentence", "/sentence/clear", "/health", "/api/detection"]
     }
 
 
@@ -129,7 +137,7 @@ def predict(data: PredictRequest):
                 and (now - last_sign_time) >= SENTENCE_DELAY
                 and confidence >= CONFIDENCE_THRESH):
             sentence_buffer.append(stable_sign)
-            last_sign_time      = now           # reset timer so it doesn't keep appending
+            last_sign_time      = now 
             appended_to_sentence = True
 
         return {
@@ -168,3 +176,52 @@ def backspace():
     if sentence_buffer:
         sentence_buffer.pop()
     return {"sentence": "".join(sentence_buffer)}
+
+
+# ─────────────────────────────────────────────────────────────
+# NEW: LIFECYCLE DETECTION ENDPOINTS FOR COMPONENT COUPLING
+# ─────────────────────────────────────────────────────────────
+
+@app.post("/api/detection/start")
+def start_detection(payload: LifecycleRequest):
+    """Resets memory state cleanly so old letters don't instantly pass new quiz steps."""
+    global sentence_buffer, last_stable_sign, last_sign_time
+    sentence_buffer = []
+    last_stable_sign = None
+    last_sign_time = 0.0
+    prediction_buffer.clear()
+    
+    print(f"🚀 Tracking pipeline started for user: {payload.user_id}")
+    return {"status": "started", "user_id": payload.user_id}
+
+
+@app.get("/api/detection/current/{user_id}")
+def get_current_detection(user_id: str):
+    """Polled by React every 400ms. Yields exact case-matching predictions."""
+    current_stable = majority_vote(prediction_buffer)
+    
+    prediction_payload = ""
+    if current_stable:
+        prediction_payload = str(current_stable)
+    elif len(prediction_buffer) > 0 and prediction_buffer[-1] is not None:
+        prediction_payload = str(prediction_buffer[-1])
+
+    return {
+        "user_id": user_id,
+        "prediction": prediction_payload,
+        "stable_sign": current_stable,
+        "sentence": "".join(sentence_buffer)
+    }
+
+
+@app.post("/api/detection/stop")
+def stop_detection(payload: LifecycleRequest):
+    """Flushes background buffers when quiz ends to clear memory footprints."""
+    global sentence_buffer, last_stable_sign, last_sign_time
+    sentence_buffer = []
+    last_stable_sign = None
+    last_sign_time = 0.0
+    prediction_buffer.clear()
+    
+    print(f"🛑 Tracking pipeline stopped for user: {payload.user_id}")
+    return {"status": "stopped", "user_id": payload.user_id}
