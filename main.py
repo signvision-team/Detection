@@ -16,7 +16,6 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Crucial: Ensure your local React server port matches origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -47,7 +46,7 @@ CONFIDENCE_THRESH  = 0.60   # minimum confidence to accept prediction
 SENTENCE_DELAY     = 2.0    # seconds before appending sign to sentence
 
 # ─────────────────────────────────────────────
-# STATE  (in-memory, per-server-instance)
+# STATE (In-Memory Tracking)
 # ─────────────────────────────────────────────
 prediction_buffer  = deque(maxlen=VOTE_WINDOW)
 sentence_buffer    : List[str] = []
@@ -62,8 +61,8 @@ class PredictRequest(BaseModel):
     features: List[float]          # 63 normalised x,y,z landmarks
 
 class LifecycleRequest(BaseModel):
-    user_id: Union[str, int]       # ◄── This accepts BOTH "2" and 2 safely!
-    lesson_id: Optional[Union[str, int]] = None  # ◄── Protects lesson_id data types too
+    user_id: Union[str, int]       
+    lesson_id: Optional[Union[str, int]] = None  
 
 # ─────────────────────────────────────────────
 # HELPER — majority vote over recent frames
@@ -117,7 +116,7 @@ def predict(data: PredictRequest):
         if confidence >= CONFIDENCE_THRESH:
             prediction_buffer.append(raw_pred)
         else:
-            prediction_buffer.append(None)   # low-confidence frame
+            prediction_buffer.append(None)   
 
         # ── Majority vote for stable sign ─────────────────
         stable_sign = majority_vote(prediction_buffer)
@@ -145,7 +144,8 @@ def predict(data: PredictRequest):
             "confidence"           : round(confidence, 4),
             "stable_sign"          : stable_sign,
             "appended_to_sentence" : appended_to_sentence,
-            "sentence"             : "".join(sentence_buffer),
+            # FIXED: Added space character separator for word readability
+            "sentence"             : " ".join(sentence_buffer),
             "buffer_votes"         : list(prediction_buffer),
         }
 
@@ -156,7 +156,7 @@ def predict(data: PredictRequest):
 @app.get("/sentence")
 def get_sentence():
     return {
-        "sentence"      : "".join(sentence_buffer),
+        "sentence"      : " ".join(sentence_buffer),
         "signs_captured": len(sentence_buffer)
     }
 
@@ -175,16 +175,15 @@ def clear_sentence():
 def backspace():
     if sentence_buffer:
         sentence_buffer.pop()
-    return {"sentence": "".join(sentence_buffer)}
+    return {"sentence": " ".join(sentence_buffer)}
 
 
 # ─────────────────────────────────────────────────────────────
-# NEW: LIFECYCLE DETECTION ENDPOINTS FOR COMPONENT COUPLING
+# LIFECYCLE DETECTION ENDPOINTS FOR COMPONENT COUPLING
 # ─────────────────────────────────────────────────────────────
 
 @app.post("/api/detection/start")
 def start_detection(payload: LifecycleRequest):
-    """Resets memory state cleanly so old letters don't instantly pass new quiz steps."""
     global sentence_buffer, last_stable_sign, last_sign_time
     sentence_buffer = []
     last_stable_sign = None
@@ -197,7 +196,6 @@ def start_detection(payload: LifecycleRequest):
 
 @app.get("/api/detection/current/{user_id}")
 def get_current_detection(user_id: str):
-    """Polled by React every 400ms. Yields exact case-matching predictions."""
     current_stable = majority_vote(prediction_buffer)
     
     prediction_payload = ""
@@ -210,13 +208,12 @@ def get_current_detection(user_id: str):
         "user_id": user_id,
         "prediction": prediction_payload,
         "stable_sign": current_stable,
-        "sentence": "".join(sentence_buffer)
+        "sentence": " ".join(sentence_buffer)
     }
 
 
 @app.post("/api/detection/stop")
 def stop_detection(payload: LifecycleRequest):
-    """Flushes background buffers when quiz ends to clear memory footprints."""
     global sentence_buffer, last_stable_sign, last_sign_time
     sentence_buffer = []
     last_stable_sign = None
